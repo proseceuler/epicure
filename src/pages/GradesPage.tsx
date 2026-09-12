@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { motion } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import { supabase } from '@/lib/supabase';
 import { SUBJECTS, SUBJECT_MAP, EX_BREAKDOWN, NUM_TERMS, type Assessment, type SubjectKey, type ComponentType, type ExType } from '@/lib/types';
 import {
@@ -14,11 +14,16 @@ import {
   DEFAULT_TARGET,
 } from '@/lib/gradeUtils';
 import { Card, PageHeader, Button, Input, Badge, gradeColor } from '@/components/kit';
-import { Calculator, Plus, Trash2, ChevronDown, ChevronRight, ArrowUpRight, ArrowDownRight, AlertTriangle } from 'lucide-react';
+import { Calculator, Plus, Trash2, ArrowUpRight, ArrowDownRight, AlertTriangle } from 'lucide-react';
 
 const COMPONENT_LABELS: Record<ComponentType, string> = { ww: 'Written Works', pt: 'Performance Tasks', ex: 'Examinations' };
 const COMPONENT_SHORT: Record<ComponentType, string> = { ww: 'WW', pt: 'PT', ex: 'EX' };
 const EX_LABELS: Record<ExType, string> = { st1: 'Summative Test 1', st2: 'Summative Test 2', te: 'Term Examination' };
+const EX_ORDER: ExType[] = ['st1', 'st2', 'te'];
+
+const PILL = 'px-3 py-1.5 rounded-xl text-sm font-medium transition-all';
+const PILL_ON = 'bg-zinc-900 text-white';
+const PILL_OFF = 'glass text-zinc-600 glass-hover';
 
 function TermSpark({ values, className = '' }: { values: (number | null)[]; className?: string }) {
   const nums = values.map((v) => (v == null ? null : v));
@@ -62,12 +67,56 @@ function TermSpark({ values, className = '' }: { values: (number | null)[]; clas
   );
 }
 
+function AddForm({
+  name, score, max, onName, onScore, onMax, onAdd, onCancel, namePlaceholder,
+}: {
+  name: string; score: string; max: string;
+  onName: (v: string) => void; onScore: (v: string) => void; onMax: (v: string) => void;
+  onAdd: () => void; onCancel: () => void; namePlaceholder: string;
+}) {
+  return (
+    <motion.div
+      initial={{ height: 0, opacity: 0 }}
+      animate={{ height: 'auto', opacity: 1 }}
+      exit={{ height: 0, opacity: 0 }}
+      transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+      className="overflow-hidden"
+    >
+      <div className="flex flex-col gap-2 pt-2">
+        <Input value={name} onChange={onName} placeholder={namePlaceholder} className="rounded-2xl" />
+        <Input value={score} onChange={onScore} placeholder="Score" type="number" className="rounded-2xl" />
+        <Input value={max} onChange={onMax} placeholder="Max" type="number" className="rounded-2xl" />
+        <div className="flex items-center gap-2 pt-0.5">
+          <Button size="sm" onClick={onAdd}>Add</Button>
+          <button type="button" onClick={onCancel} className="px-2 py-1 text-sm text-zinc-500 hover:text-zinc-800">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function AddTrigger({ onClick }: { onClick: () => void }) {
+  return (
+    <motion.button
+      type="button"
+      whileTap={{ scale: 0.96 }}
+      whileHover={{ x: 2 }}
+      onClick={onClick}
+      className="inline-flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-900"
+    >
+      <Plus className="w-3.5 h-3.5" />
+      Add
+    </motion.button>
+  );
+}
+
 export default function GradesPage() {
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedSubject, setSelectedSubject] = useState<SubjectKey>('math');
   const [selectedTerm, setSelectedTerm] = useState(1);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [adding, setAdding] = useState<{ component: ComponentType; exType?: ExType } | null>(null);
   const [newName, setNewName] = useState('');
   const [newScore, setNewScore] = useState('');
@@ -105,6 +154,13 @@ export default function GradesPage() {
   const lowest = ranked.length ? ranked.reduce((a, b) => (a.term <= b.term ? a : b)) : null;
   const atRisk = termGrades.filter((s) => s.term != null && s.term < PASSING);
 
+  const openAdd = (component: ComponentType, exType?: ExType) => {
+    setAdding({ component, exType });
+    setNewName('');
+    setNewScore('');
+    setNewMax('');
+  };
+
   const addAssessment = async (component: ComponentType, exType?: ExType) => {
     if (!newName.trim() || !newScore || !newMax) return;
     const score = parseFloat(newScore);
@@ -134,132 +190,21 @@ export default function GradesPage() {
     setAssessments(assessments.filter((a) => a.id !== id));
   };
 
-  const toggleExpand = (key: string) => setExpanded({ ...expanded, [key]: !expanded[key] });
-
-  const renderComponentSection = (component: ComponentType) => {
-    const items = subjectAssessments.filter((a) => a.component === component);
-    const pct = componentPercentage(subjectAssessments, component);
-    const key = component;
-    const weight = subject.weights[component];
-
-    return (
-      <Card key={key} className="overflow-hidden">
+  const renderItems = (items: Assessment[]) =>
+    items.map((a) => (
+      <div key={a.id} className="flex items-center gap-3 py-1 text-sm group">
+        <span className="flex-1 min-w-0 truncate text-zinc-600">{a.name}</span>
+        <span className="text-zinc-500 tabular-nums shrink-0">{a.score}/{a.max_score}</span>
+        <span className="text-zinc-400 w-11 text-right tabular-nums shrink-0">{((a.score / a.max_score) * 100).toFixed(0)}%</span>
         <button
-          onClick={() => toggleExpand(key)}
-          className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/30 transition-colors"
+          type="button"
+          onClick={() => deleteAssessment(a.id)}
+          className="text-zinc-300 hover:text-zinc-600 opacity-0 group-hover:opacity-100 transition-opacity"
         >
-          <div className="flex items-center gap-3">
-            {expanded[key] ? <ChevronDown className="w-4 h-4 text-zinc-400" /> : <ChevronRight className="w-4 h-4 text-zinc-400" />}
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-zinc-900 text-white">{COMPONENT_SHORT[component]}</span>
-              <span className="font-medium text-zinc-700">{COMPONENT_LABELS[component]}</span>
-              <span className="text-xs text-zinc-400">({weight}% weight)</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-zinc-500">{items.length} items</span>
-            <span className={`text-sm font-bold ${pct >= 75 ? 'text-zinc-900' : 'text-zinc-400'}`}>
-              {items.length > 0 ? `${pct.toFixed(1)}%` : '\u2014'}
-            </span>
-          </div>
+          <Trash2 className="w-3.5 h-3.5" />
         </button>
-
-        {expanded[key] && (
-          <div className="border-t border-zinc-200/40">
-            {items.length === 0 && component !== 'ex' && (
-              <p className="px-4 py-3 text-sm text-zinc-400">No {COMPONENT_LABELS[component].toLowerCase()} added yet.</p>
-            )}
-
-            {component === 'ex' ? (
-              <div className="divide-y divide-zinc-200/30">
-                {(Object.keys(EX_LABELS) as ExType[]).map((exType) => {
-                  const exItems = items.filter((a) => a.ex_type === exType);
-                  const exPct = exComponentPercentage(subjectAssessments, exType);
-                  const exKey = `ex-${exType}`;
-                  return (
-                    <div key={exType} className="px-4">
-                      <button
-                        onClick={() => toggleExpand(exKey)}
-                        className="w-full flex items-center justify-between py-3 hover:bg-white/30 transition-colors"
-                      >
-                        <div className="flex items-center gap-2">
-                          {expanded[exKey] ? <ChevronDown className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />}
-                          <span className="text-sm font-medium text-zinc-600">{EX_LABELS[exType]}</span>
-                          <span className="text-xs text-zinc-400">({EX_BREAKDOWN[exType]}% of EX)</span>
-                        </div>
-                        <span className={`text-sm font-semibold ${exPct >= 75 ? 'text-zinc-900' : exItems.length > 0 ? 'text-zinc-400' : 'text-zinc-300'}`}>
-                          {exItems.length > 0 ? `${exPct.toFixed(1)}%` : '\u2014'}
-                        </span>
-                      </button>
-                      {expanded[exKey] && (
-                        <div className="pb-3">
-                          {exItems.map((a) => (
-                            <div key={a.id} className="flex items-center gap-3 py-1.5 text-sm group">
-                              <span className="flex-1 text-zinc-600">{a.name}</span>
-                              <span className="text-zinc-500">{a.score}/{a.max_score}</span>
-                              <span className="text-zinc-400 w-12 text-right">{((a.score / a.max_score) * 100).toFixed(1)}%</span>
-                              <button onClick={() => deleteAssessment(a.id)} className="text-zinc-300 hover:text-zinc-600 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          ))}
-                          {adding?.component === 'ex' && adding?.exType === exType ? (
-                            <div className="flex flex-wrap items-center gap-2 mt-2">
-                              <Input value={newName} onChange={setNewName} placeholder="Test name" className="flex-1 min-w-[120px]" />
-                              <Input value={newScore} onChange={setNewScore} placeholder="Score" type="number" className="w-20" />
-                              <Input value={newMax} onChange={setNewMax} placeholder="Max" type="number" className="w-20" />
-                              <Button size="sm" onClick={() => addAssessment('ex', exType)}>Add</Button>
-                              <Button size="sm" variant="ghost" onClick={() => setAdding(null)}>Cancel</Button>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => { setAdding({ component: 'ex', exType }); setNewName(''); setNewScore(''); setNewMax(''); }}
-                              className="flex items-center gap-1 text-xs text-zinc-700 hover:text-zinc-900 mt-2 font-medium"
-                            >
-                              <Plus className="w-3.5 h-3.5" /> Add {EX_LABELS[exType]}
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="px-4 pb-3">
-                {items.map((a) => (
-                  <div key={a.id} className="flex items-center gap-3 py-1.5 text-sm group">
-                    <span className="flex-1 text-zinc-600">{a.name}</span>
-                    <span className="text-zinc-500">{a.score}/{a.max_score}</span>
-                    <span className="text-zinc-400 w-12 text-right">{((a.score / a.max_score) * 100).toFixed(1)}%</span>
-                    <button onClick={() => deleteAssessment(a.id)} className="text-zinc-300 hover:text-zinc-600 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
-                {adding?.component === component && !adding.exType ? (
-                  <div className="flex flex-wrap items-center gap-2 mt-2">
-                    <Input value={newName} onChange={setNewName} placeholder="Assessment name" className="flex-1 min-w-[120px]" />
-                    <Input value={newScore} onChange={setNewScore} placeholder="Score" type="number" className="w-20" />
-                    <Input value={newMax} onChange={setNewMax} placeholder="Max" type="number" className="w-20" />
-                    <Button size="sm" onClick={() => addAssessment(component)}>Add</Button>
-                    <Button size="sm" variant="ghost" onClick={() => setAdding(null)}>Cancel</Button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => { setAdding({ component }); setNewName(''); setNewScore(''); setNewMax(''); }}
-                    className="flex items-center gap-1 text-xs text-zinc-700 hover:text-zinc-900 mt-2 font-medium"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Add {COMPONENT_LABELS[component].replace(/s$/, '')}
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-      </Card>
-    );
-  };
+      </div>
+    ));
 
   if (loading) {
     return <div className="flex items-center justify-center py-20"><Calculator className="w-8 h-8 text-zinc-300 animate-pulse" /></div>;
@@ -275,18 +220,15 @@ export default function GradesPage() {
         subtitle={`WW ${subject.weights.ww}% \u00b7 PT ${subject.weights.pt}% \u00b7 EX ${subject.weights.ex}%`}
       />
 
-      <div className="flex flex-wrap items-center gap-2 mb-5">
+      <div className="flex flex-wrap items-center gap-2 mb-4">
         {SUBJECTS.map((s) => {
           const active = selectedSubject === s.key;
           return (
             <button
               key={s.key}
+              type="button"
               onClick={() => setSelectedSubject(s.key)}
-              className={`px-3.5 py-1.5 rounded-full text-[13px] font-medium transition-colors ${
-                active
-                  ? 'bg-zinc-900 text-white'
-                  : 'bg-white text-zinc-600 ring-1 ring-zinc-200/90 hover:bg-zinc-50'
-              }`}
+              className={`${PILL} ${active ? PILL_ON : PILL_OFF}`}
             >
               {s.shortName}
             </button>
@@ -294,30 +236,27 @@ export default function GradesPage() {
         })}
       </div>
 
-      <div className="flex gap-2 mb-5">
+      <div className="flex flex-wrap gap-2 mb-4">
         {Array.from({ length: NUM_TERMS }, (_, i) => i + 1).map((t) => (
           <button
             key={t}
+            type="button"
             onClick={() => setSelectedTerm(t)}
-            className={`px-3.5 py-1.5 rounded-full text-[13px] font-medium transition-colors ${
-              selectedTerm === t
-                ? 'bg-zinc-900 text-white'
-                : 'bg-white text-zinc-600 ring-1 ring-zinc-200/90 hover:bg-zinc-50'
-            }`}
+            className={`${PILL} ${selectedTerm === t ? PILL_ON : PILL_OFF}`}
           >
             Term {t}
           </button>
         ))}
       </div>
 
-      <div className="grid lg:grid-cols-12 gap-4 mb-5 items-start">
-        <div className="lg:col-span-5 space-y-3">
-          <Card className="px-4 py-3">
+      <div className="grid lg:grid-cols-12 gap-4 items-start">
+        <div className="lg:col-span-4 space-y-3">
+          <Card className="px-3.5 py-2.5">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-[11px] uppercase tracking-wide text-zinc-400">Final \u00b7 {subject.shortName}</p>
+                <p className="text-[10px] uppercase tracking-wide text-zinc-400">Final \u00b7 {subject.shortName}</p>
                 <div className="flex items-baseline gap-2 mt-0.5">
-                  <span className={`text-2xl font-semibold tabular-nums leading-none ${gradeColor(finalGrade)}`}>
+                  <span className={`text-xl font-semibold tabular-nums leading-none ${gradeColor(finalGrade)}`}>
                     {finalGrade !== null ? finalGrade.toFixed(1) : '\u2014'}
                   </span>
                   {finalDescriptor && <Badge tone={finalDescriptor.tone}>{finalDescriptor.label}</Badge>}
@@ -325,7 +264,7 @@ export default function GradesPage() {
               </div>
               <div className="flex flex-col items-end gap-0.5 shrink-0">
                 <TermSpark values={series} />
-                <div className="flex gap-2 text-[10px] text-zinc-400 tabular-nums">
+                <div className="flex gap-1.5 text-[10px] text-zinc-400 tabular-nums">
                   {series.map((g, i) => (
                     <span key={i}>T{i + 1} {g != null ? g.toFixed(0) : '\u2014'}</span>
                   ))}
@@ -333,35 +272,132 @@ export default function GradesPage() {
               </div>
             </div>
             {descriptor && termGrade != null && (
-              <p className="text-[11px] text-zinc-400 mt-2">
+              <p className="text-[11px] text-zinc-400 mt-1.5">
                 Term {selectedTerm}: <span className={`font-medium ${gradeColor(termGrade)}`}>{termGrade.toFixed(1)}</span>
                 <span className="text-zinc-300"> \u00b7 {descriptor.label}</span>
               </p>
             )}
           </Card>
 
-          <Card className="px-4 py-3">
-            <p className="text-[11px] uppercase tracking-wide text-zinc-400 mb-2">All subjects</p>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+          <Card className="px-3.5 py-2.5">
+            <p className="text-[10px] uppercase tracking-wide text-zinc-400 mb-1.5">All subjects</p>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
               {termGrades.map((s) => (
                 <button
                   key={s.key}
+                  type="button"
                   onClick={() => setSelectedSubject(s.key)}
-                  className={`flex items-center justify-between gap-2 text-left rounded-lg px-1 -mx-1 py-0.5 hover:bg-zinc-100/70 ${
+                  className={`flex items-center justify-between gap-2 text-left rounded-lg px-1 -mx-1 py-px hover:bg-zinc-100/70 ${
                     s.key === selectedSubject ? 'bg-zinc-100/80' : ''
                   }`}
                 >
-                  <span className="text-[12px] text-zinc-600 truncate">{s.shortName}</span>
-                  <span className={`text-[12px] font-semibold tabular-nums ${gradeColor(s.term)}`}>
+                  <span className="text-[11px] text-zinc-600 truncate">{s.shortName}</span>
+                  <span className={`text-[11px] font-semibold tabular-nums ${gradeColor(s.term)}`}>
                     {s.term != null ? s.term.toFixed(0) : '\u2014'}
                   </span>
                 </button>
               ))}
             </div>
           </Card>
+
+          <Card className="overflow-hidden">
+            {(['ww', 'pt', 'ex'] as ComponentType[]).map((component, idx) => {
+              const items = subjectAssessments.filter((a) => a.component === component);
+              const pct = componentPercentage(subjectAssessments, component);
+              const weight = subject.weights[component];
+              const isAddingHere = adding?.component === component && !adding.exType;
+              return (
+                <div key={component} className={idx > 0 ? 'border-t border-zinc-200/50' : ''}>
+                  <div className="flex items-center gap-2 px-3.5 py-2">
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-zinc-900 text-white">
+                      {COMPONENT_SHORT[component]}
+                    </span>
+                    <span className="text-[13px] font-medium text-zinc-700">{COMPONENT_LABELS[component]}</span>
+                    <span className="text-[11px] text-zinc-400">{weight}% weight</span>
+                    <span className="ml-auto text-[11px] text-zinc-400 tabular-nums">
+                      {items.length} item{items.length === 1 ? '' : 's'}
+                    </span>
+                    {items.length > 0 && (
+                      <span className={`text-[12px] font-semibold tabular-nums ${pct >= 75 ? 'text-zinc-900' : 'text-zinc-400'}`}>
+                        {pct.toFixed(0)}%
+                      </span>
+                    )}
+                  </div>
+
+                  {component === 'ex' ? (
+                    <div className="px-3 pb-2.5 space-y-1.5">
+                      {EX_ORDER.map((exType) => {
+                        const exItems = items.filter((a) => a.ex_type === exType);
+                        const exPct = exComponentPercentage(subjectAssessments, exType);
+                        const isAddingEx = adding?.component === 'ex' && adding.exType === exType;
+                        return (
+                          <div key={exType} className="rounded-xl bg-zinc-50/80 px-3 py-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[12px] font-medium text-zinc-600">
+                                {EX_LABELS[exType]}
+                                <span className="ml-1 font-normal text-zinc-400">{EX_BREAKDOWN[exType]}% of EX</span>
+                              </span>
+                              <span className="ml-auto text-[12px] font-semibold text-zinc-400 tabular-nums">
+                                {exItems.length > 0 ? `${exPct.toFixed(0)}%` : '\u2014'}
+                              </span>
+                            </div>
+                            {exItems.length > 0 && <div className="mt-1">{renderItems(exItems)}</div>}
+                            <AnimatePresence initial={false} mode="wait">
+                              {isAddingEx ? (
+                                <AddForm
+                                  key="form"
+                                  name={newName}
+                                  score={newScore}
+                                  max={newMax}
+                                  onName={setNewName}
+                                  onScore={setNewScore}
+                                  onMax={setNewMax}
+                                  onAdd={() => addAssessment('ex', exType)}
+                                  onCancel={() => setAdding(null)}
+                                  namePlaceholder="Name"
+                                />
+                              ) : (
+                                <motion.div key="add" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-1">
+                                  <AddTrigger onClick={() => openAdd('ex', exType)} />
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="px-3.5 pb-2.5">
+                      {items.length > 0 && <div className="mb-1">{renderItems(items)}</div>}
+                      <AnimatePresence initial={false} mode="wait">
+                        {isAddingHere ? (
+                          <AddForm
+                            key="form"
+                            name={newName}
+                            score={newScore}
+                            max={newMax}
+                            onName={setNewName}
+                            onScore={setNewScore}
+                            onMax={setNewMax}
+                            onAdd={() => addAssessment(component)}
+                            onCancel={() => setAdding(null)}
+                            namePlaceholder="Name"
+                          />
+                        ) : (
+                          <motion.div key="add" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                            <AddTrigger onClick={() => openAdd(component)} />
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </Card>
         </div>
 
-        <div className="lg:col-span-7 grid sm:grid-cols-2 gap-3">
+        <div className="lg:col-span-8 grid sm:grid-cols-2 gap-3">
           <Card className="px-4 py-3 sm:col-span-2">
             <p className="text-[11px] uppercase tracking-wide text-zinc-400">To hit {DEFAULT_TARGET}</p>
             <p className="mt-1 text-sm font-medium text-zinc-800 leading-snug">{need.message}</p>
@@ -407,8 +443,9 @@ export default function GradesPage() {
                 {atRisk.map((s) => (
                   <button
                     key={s.key}
+                    type="button"
                     onClick={() => setSelectedSubject(s.key)}
-                    className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-zinc-100 text-zinc-700 ring-1 ring-zinc-200"
+                    className={`${PILL} ${PILL_OFF} !py-1 !text-[11px]`}
                   >
                     {s.shortName} {s.term?.toFixed(0)}
                   </button>
@@ -417,10 +454,6 @@ export default function GradesPage() {
             )}
           </Card>
         </div>
-      </div>
-
-      <div className="space-y-3">
-        {(['ww', 'pt', 'ex'] as ComponentType[]).map(renderComponentSection)}
       </div>
     </div>
   );
