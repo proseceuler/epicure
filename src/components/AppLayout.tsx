@@ -2,7 +2,7 @@ import { useState, useEffect, type ReactNode } from 'react';
 import { SUBJECTS, NUM_TERMS } from '@/lib/types';
 import GlobalDock from '@/components/GlobalDock';
 import {
-  LayoutDashboard, Calculator, FolderTree, SquareCheck as CheckSquare, Calendar,
+  LayoutDashboard, FunctionSquare, FolderTree, SquareCheck as CheckSquare, Calendar,
   Timer, BarChart3, CalendarHeart, StickyNote, Wallet, Menu, X,
   Layers, Bot, Settings as SettingsIcon,
 } from 'lucide-react';
@@ -23,7 +23,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, group: 'Overview' },
-  { id: 'grades', label: 'Grade Calculator', icon: Calculator, group: 'Academic' },
+  { id: 'grades', label: 'Grade Calculator', icon: FunctionSquare, group: 'Academic' },
   { id: 'forecast', label: 'Grade Forecaster', icon: BarChart3, group: 'Academic' },
   { id: 'classhub', label: 'Class Hub', icon: FolderTree, group: 'Academic' },
   { id: 'assistant', label: 'Study Assistant', icon: Bot, group: 'Academic' },
@@ -73,9 +73,7 @@ export default function AppLayout({ page, navigate, children }: { page: PageId; 
   }, [currentLabel]);
 
   return (
-    /* Fixed full-viewport shell — no document scrollbar */
     <div className="relative flex h-screen overflow-hidden bg-zinc-100">
-      {/* Ambient liquid-glass blobs */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className="absolute -left-40 -top-40 h-96 w-96 rounded-full bg-zinc-300/25 blur-3xl" />
         <div className="absolute -right-40 top-1/3 h-96 w-96 rounded-full bg-zinc-400/20 blur-3xl" />
@@ -89,7 +87,6 @@ export default function AppLayout({ page, navigate, children }: { page: PageId; 
         />
       )}
 
-      {/* Sidebar */}
       <aside
         className={`fixed bottom-4 left-4 top-4 z-40 w-60 transition-transform duration-300 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-[280px] lg:translate-x-0'
@@ -137,8 +134,8 @@ export default function AppLayout({ page, navigate, children }: { page: PageId; 
 
           <div className="shrink-0 border-t border-white/5 p-3">
             <div className="flex items-center gap-2 px-3 py-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-sm font-semibold text-white">
-                G
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white">
+                <FunctionSquare className="h-4 w-4" />
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-zinc-200">Grade 10</p>
@@ -161,9 +158,7 @@ export default function AppLayout({ page, navigate, children }: { page: PageId; 
         </div>
       </aside>
 
-      {/* Main workspace column */}
       <div className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden lg:pl-[17rem]">
-        {/* Mobile header */}
         <header className="z-20 shrink-0 px-3 pt-4 lg:hidden">
           <div className="glass glass-shadow flex h-10 items-center justify-between rounded-xl px-2">
             <div className="flex items-center gap-2">
@@ -180,7 +175,6 @@ export default function AppLayout({ page, navigate, children }: { page: PageId; 
           </div>
         </header>
 
-        {/* Page content — scrolls unless assistant (assistant manages its own panes) */}
         <main
           className={
             isAssistant
