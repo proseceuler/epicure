@@ -21,9 +21,10 @@ const COMPONENT_SHORT: Record<ComponentType, string> = { ww: 'WW', pt: 'PT', ex:
 const EX_LABELS: Record<ExType, string> = { st1: 'Summative Test 1', st2: 'Summative Test 2', te: 'Term Examination' };
 const EX_ORDER: ExType[] = ['st1', 'st2', 'te'];
 
-const PILL = 'px-3 py-1.5 rounded-xl text-sm font-medium transition-all';
-const PILL_ON = 'bg-zinc-900 text-white';
-const PILL_OFF = 'glass text-zinc-600 glass-hover';
+/** Same pills as Class Hub / Forecast / Todos. */
+const PILL = 'px-3 py-1.5 rounded-xl text-sm font-medium border transition-all';
+const PILL_ON = 'bg-zinc-900 text-white border-zinc-900';
+const PILL_OFF = 'glass text-zinc-600 border-transparent glass-hover';
 
 function TermSpark({ values, className = '' }: { values: (number | null)[]; className?: string }) {
   const nums = values.map((v) => (v == null ? null : v));
@@ -97,16 +98,20 @@ function AddForm({
   );
 }
 
-function AddTrigger({ onClick }: { onClick: () => void }) {
+function AddTrigger({ onClick, open }: { onClick: () => void; open?: boolean }) {
   return (
     <motion.button
       type="button"
-      whileTap={{ scale: 0.96 }}
-      whileHover={{ x: 2 }}
+      whileTap={{ scale: 0.94 }}
+      whileHover={{ x: 1 }}
       onClick={onClick}
-      className="inline-flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-900"
+      className={`inline-flex items-center gap-1 text-xs font-medium transition-colors ${
+        open ? 'text-zinc-800' : 'text-zinc-500 hover:text-zinc-900'
+      }`}
     >
-      <Plus className="w-3.5 h-3.5" />
+      <motion.span animate={{ rotate: open ? 45 : 0 }} transition={{ duration: 0.18 }}>
+        <Plus className="w-3.5 h-3.5" />
+      </motion.span>
       Add
     </motion.button>
   );
@@ -155,6 +160,10 @@ export default function GradesPage() {
   const atRisk = termGrades.filter((s) => s.term != null && s.term < PASSING);
 
   const openAdd = (component: ComponentType, exType?: ExType) => {
+    if (adding?.component === component && adding.exType === exType) {
+      setAdding(null);
+      return;
+    }
     setAdding({ component, exType });
     setNewName('');
     setNewScore('');
@@ -192,10 +201,10 @@ export default function GradesPage() {
 
   const renderItems = (items: Assessment[]) =>
     items.map((a) => (
-      <div key={a.id} className="flex items-center gap-3 py-1 text-sm group">
+      <div key={a.id} className="flex items-center gap-2 py-0.5 text-sm group">
         <span className="flex-1 min-w-0 truncate text-zinc-600">{a.name}</span>
-        <span className="text-zinc-500 tabular-nums shrink-0">{a.score}/{a.max_score}</span>
-        <span className="text-zinc-400 w-11 text-right tabular-nums shrink-0">{((a.score / a.max_score) * 100).toFixed(0)}%</span>
+        <span className="text-zinc-500 tabular-nums shrink-0 text-[13px]">{a.score}/{a.max_score}</span>
+        <span className="text-zinc-400 w-9 text-right tabular-nums shrink-0 text-[12px]">{((a.score / a.max_score) * 100).toFixed(0)}%</span>
         <button
           type="button"
           onClick={() => deleteAssessment(a.id)}
@@ -217,10 +226,10 @@ export default function GradesPage() {
     <div>
       <PageHeader
         title="Grades"
-        subtitle={`WW ${subject.weights.ww}% \u00b7 PT ${subject.weights.pt}% \u00b7 EX ${subject.weights.ex}%`}
+        subtitle={`WW ${subject.weights.ww}% · PT ${subject.weights.pt}% · EX ${subject.weights.ex}%`}
       />
 
-      <div className="flex flex-wrap items-center gap-2 mb-4">
+      <div className="flex flex-wrap items-center gap-2 mb-3">
         {SUBJECTS.map((s) => {
           const active = selectedSubject === s.key;
           return (
@@ -249,156 +258,144 @@ export default function GradesPage() {
         ))}
       </div>
 
-      <div className="grid lg:grid-cols-12 gap-4 items-start">
-        <div className="lg:col-span-4 space-y-3">
-          <Card className="px-3.5 py-2.5">
-            <div className="flex items-center justify-between gap-3">
+      <div className="grid lg:grid-cols-12 gap-3 items-start">
+        <div className="lg:col-span-3 space-y-3">
+          <Card className="px-3 py-2">
+            <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
-                <p className="text-[10px] uppercase tracking-wide text-zinc-400">Final \u00b7 {subject.shortName}</p>
-                <div className="flex items-baseline gap-2 mt-0.5">
+                <p className="text-[10px] uppercase tracking-wide text-zinc-400">Final · {subject.shortName}</p>
+                <div className="flex items-baseline gap-1.5 mt-0.5">
                   <span className={`text-xl font-semibold tabular-nums leading-none ${gradeColor(finalGrade)}`}>
-                    {finalGrade !== null ? finalGrade.toFixed(1) : '\u2014'}
+                    {finalGrade !== null ? finalGrade.toFixed(1) : '—'}
                   </span>
                   {finalDescriptor && <Badge tone={finalDescriptor.tone}>{finalDescriptor.label}</Badge>}
                 </div>
               </div>
-              <div className="flex flex-col items-end gap-0.5 shrink-0">
-                <TermSpark values={series} />
-                <div className="flex gap-1.5 text-[10px] text-zinc-400 tabular-nums">
-                  {series.map((g, i) => (
-                    <span key={i}>T{i + 1} {g != null ? g.toFixed(0) : '\u2014'}</span>
-                  ))}
-                </div>
-              </div>
+              <TermSpark values={series} />
             </div>
             {descriptor && termGrade != null && (
-              <p className="text-[11px] text-zinc-400 mt-1.5">
-                Term {selectedTerm}: <span className={`font-medium ${gradeColor(termGrade)}`}>{termGrade.toFixed(1)}</span>
-                <span className="text-zinc-300"> \u00b7 {descriptor.label}</span>
+              <p className="text-[11px] text-zinc-400 mt-1">
+                T{selectedTerm} <span className={`font-medium ${gradeColor(termGrade)}`}>{termGrade.toFixed(1)}</span>
+                <span className="text-zinc-300"> · {descriptor.label}</span>
               </p>
             )}
           </Card>
 
-          <Card className="px-3.5 py-2.5">
-            <p className="text-[10px] uppercase tracking-wide text-zinc-400 mb-1.5">All subjects</p>
-            <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+          <Card className="px-3 py-2">
+            <p className="text-[10px] uppercase tracking-wide text-zinc-400 mb-1">All subjects</p>
+            <div className="grid grid-cols-2 gap-x-2 gap-y-0">
               {termGrades.map((s) => (
                 <button
                   key={s.key}
                   type="button"
                   onClick={() => setSelectedSubject(s.key)}
-                  className={`flex items-center justify-between gap-2 text-left rounded-lg px-1 -mx-1 py-px hover:bg-zinc-100/70 ${
+                  className={`flex items-center justify-between gap-1 text-left rounded-md px-1 py-px hover:bg-zinc-100/70 ${
                     s.key === selectedSubject ? 'bg-zinc-100/80' : ''
                   }`}
                 >
                   <span className="text-[11px] text-zinc-600 truncate">{s.shortName}</span>
                   <span className={`text-[11px] font-semibold tabular-nums ${gradeColor(s.term)}`}>
-                    {s.term != null ? s.term.toFixed(0) : '\u2014'}
+                    {s.term != null ? s.term.toFixed(0) : '—'}
                   </span>
                 </button>
               ))}
             </div>
           </Card>
-
-          <Card className="overflow-hidden">
-            {(['ww', 'pt', 'ex'] as ComponentType[]).map((component, idx) => {
-              const items = subjectAssessments.filter((a) => a.component === component);
-              const pct = componentPercentage(subjectAssessments, component);
-              const weight = subject.weights[component];
-              const isAddingHere = adding?.component === component && !adding.exType;
-              return (
-                <div key={component} className={idx > 0 ? 'border-t border-zinc-200/50' : ''}>
-                  <div className="flex items-center gap-2 px-3.5 py-2">
-                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-zinc-900 text-white">
-                      {COMPONENT_SHORT[component]}
-                    </span>
-                    <span className="text-[13px] font-medium text-zinc-700">{COMPONENT_LABELS[component]}</span>
-                    <span className="text-[11px] text-zinc-400">{weight}% weight</span>
-                    <span className="ml-auto text-[11px] text-zinc-400 tabular-nums">
-                      {items.length} item{items.length === 1 ? '' : 's'}
-                    </span>
-                    {items.length > 0 && (
-                      <span className={`text-[12px] font-semibold tabular-nums ${pct >= 75 ? 'text-zinc-900' : 'text-zinc-400'}`}>
-                        {pct.toFixed(0)}%
-                      </span>
-                    )}
-                  </div>
-
-                  {component === 'ex' ? (
-                    <div className="px-3 pb-2.5 space-y-1.5">
-                      {EX_ORDER.map((exType) => {
-                        const exItems = items.filter((a) => a.ex_type === exType);
-                        const exPct = exComponentPercentage(subjectAssessments, exType);
-                        const isAddingEx = adding?.component === 'ex' && adding.exType === exType;
-                        return (
-                          <div key={exType} className="rounded-xl bg-zinc-50/80 px-3 py-2">
-                            <div className="flex items-center gap-2">
-                              <span className="text-[12px] font-medium text-zinc-600">
-                                {EX_LABELS[exType]}
-                                <span className="ml-1 font-normal text-zinc-400">{EX_BREAKDOWN[exType]}% of EX</span>
-                              </span>
-                              <span className="ml-auto text-[12px] font-semibold text-zinc-400 tabular-nums">
-                                {exItems.length > 0 ? `${exPct.toFixed(0)}%` : '\u2014'}
-                              </span>
-                            </div>
-                            {exItems.length > 0 && <div className="mt-1">{renderItems(exItems)}</div>}
-                            <AnimatePresence initial={false} mode="wait">
-                              {isAddingEx ? (
-                                <AddForm
-                                  key="form"
-                                  name={newName}
-                                  score={newScore}
-                                  max={newMax}
-                                  onName={setNewName}
-                                  onScore={setNewScore}
-                                  onMax={setNewMax}
-                                  onAdd={() => addAssessment('ex', exType)}
-                                  onCancel={() => setAdding(null)}
-                                  namePlaceholder="Name"
-                                />
-                              ) : (
-                                <motion.div key="add" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-1">
-                                  <AddTrigger onClick={() => openAdd('ex', exType)} />
-                                </motion.div>
-                              )}
-                            </AnimatePresence>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="px-3.5 pb-2.5">
-                      {items.length > 0 && <div className="mb-1">{renderItems(items)}</div>}
-                      <AnimatePresence initial={false} mode="wait">
-                        {isAddingHere ? (
-                          <AddForm
-                            key="form"
-                            name={newName}
-                            score={newScore}
-                            max={newMax}
-                            onName={setNewName}
-                            onScore={setNewScore}
-                            onMax={setNewMax}
-                            onAdd={() => addAssessment(component)}
-                            onCancel={() => setAdding(null)}
-                            namePlaceholder="Name"
-                          />
-                        ) : (
-                          <motion.div key="add" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                            <AddTrigger onClick={() => openAdd(component)} />
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </Card>
         </div>
 
-        <div className="lg:col-span-8 grid sm:grid-cols-2 gap-3">
-          <Card className="px-4 py-3 sm:col-span-2">
+        <Card className="lg:col-span-5 overflow-hidden">
+          {(['ww', 'pt', 'ex'] as ComponentType[]).map((component, idx) => {
+            const items = subjectAssessments.filter((a) => a.component === component);
+            const pct = componentPercentage(subjectAssessments, component);
+            const weight = subject.weights[component];
+            const isAddingHere = adding?.component === component && adding.exType == null;
+            return (
+              <div key={component} className={idx > 0 ? 'border-t border-zinc-200/50' : ''}>
+                <div className="flex items-center gap-2 px-3 py-1.5">
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-zinc-900 text-white">
+                    {COMPONENT_SHORT[component]}
+                  </span>
+                  <span className="text-[13px] font-medium text-zinc-700 truncate">{COMPONENT_LABELS[component]}</span>
+                  <span className="text-[11px] text-zinc-400 shrink-0">{weight}%</span>
+                  {items.length > 0 && (
+                    <span className={`ml-auto text-[12px] font-semibold tabular-nums ${pct >= 75 ? 'text-zinc-900' : 'text-zinc-400'}`}>
+                      {pct.toFixed(0)}%
+                    </span>
+                  )}
+                  {component !== 'ex' && (
+                    <span className={items.length > 0 ? '' : 'ml-auto'}>
+                      <AddTrigger open={isAddingHere} onClick={() => openAdd(component)} />
+                    </span>
+                  )}
+                </div>
+
+                {component === 'ex' ? (
+                  <div className="px-3 pb-2 space-y-1.5">
+                    {EX_ORDER.map((exType) => {
+                      const exItems = items.filter((a) => a.ex_type === exType);
+                      const exPct = exComponentPercentage(subjectAssessments, exType);
+                      const isAddingEx = adding?.component === 'ex' && adding.exType === exType;
+                      return (
+                        <div key={exType} className="rounded-xl bg-zinc-50/80 px-2.5 py-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[12px] font-medium text-zinc-600 min-w-0 truncate">
+                              {EX_LABELS[exType]}
+                              <span className="ml-1 font-normal text-zinc-400">{EX_BREAKDOWN[exType]}%</span>
+                            </span>
+                            <span className="ml-auto text-[12px] font-semibold text-zinc-400 tabular-nums shrink-0">
+                              {exItems.length > 0 ? `${exPct.toFixed(0)}%` : '—'}
+                            </span>
+                            <AddTrigger open={isAddingEx} onClick={() => openAdd('ex', exType)} />
+                          </div>
+                          {exItems.length > 0 && <div className="mt-0.5">{renderItems(exItems)}</div>}
+                          <AnimatePresence initial={false}>
+                            {isAddingEx && (
+                              <AddForm
+                                key="form"
+                                name={newName}
+                                score={newScore}
+                                max={newMax}
+                                onName={setNewName}
+                                onScore={setNewScore}
+                                onMax={setNewMax}
+                                onAdd={() => addAssessment('ex', exType)}
+                                onCancel={() => setAdding(null)}
+                                namePlaceholder="Name"
+                              />
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="px-3 pb-2">
+                    {items.length > 0 && <div>{renderItems(items)}</div>}
+                    <AnimatePresence initial={false}>
+                      {isAddingHere && (
+                        <AddForm
+                          key="form"
+                          name={newName}
+                          score={newScore}
+                          max={newMax}
+                          onName={setNewName}
+                          onScore={setNewScore}
+                          onMax={setNewMax}
+                          onAdd={() => addAssessment(component)}
+                          onCancel={() => setAdding(null)}
+                          namePlaceholder="Name"
+                        />
+                      )}
+                    </AnimatePresence>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </Card>
+
+        <div className="lg:col-span-4 grid gap-3">
+          <Card className="px-3.5 py-3">
             <p className="text-[11px] uppercase tracking-wide text-zinc-400">To hit {DEFAULT_TARGET}</p>
             <p className="mt-1 text-sm font-medium text-zinc-800 leading-snug">{need.message}</p>
             {need.needed != null && need.possible && !need.alreadyMet && (
@@ -409,7 +406,7 @@ export default function GradesPage() {
             )}
           </Card>
 
-          <Card className="px-4 py-3">
+          <Card className="px-3.5 py-3">
             <p className="text-[11px] uppercase tracking-wide text-zinc-400">This term</p>
             <div className="mt-2 space-y-2">
               <div className="flex items-center justify-between gap-2">
@@ -417,7 +414,7 @@ export default function GradesPage() {
                   <ArrowUpRight className="w-3.5 h-3.5" /> Highest
                 </span>
                 <span className="text-[12px] font-semibold text-zinc-800">
-                  {highest ? `${highest.shortName} \u00b7 ${highest.term.toFixed(1)}` : '\u2014'}
+                  {highest ? `${highest.shortName} · ${highest.term.toFixed(1)}` : '—'}
                 </span>
               </div>
               <div className="flex items-center justify-between gap-2">
@@ -425,13 +422,13 @@ export default function GradesPage() {
                   <ArrowDownRight className="w-3.5 h-3.5" /> Lowest
                 </span>
                 <span className="text-[12px] font-semibold text-zinc-800">
-                  {lowest ? `${lowest.shortName} \u00b7 ${lowest.term.toFixed(1)}` : '\u2014'}
+                  {lowest ? `${lowest.shortName} · ${lowest.term.toFixed(1)}` : '—'}
                 </span>
               </div>
             </div>
           </Card>
 
-          <Card className="px-4 py-3">
+          <Card className="px-3.5 py-3">
             <p className="text-[11px] uppercase tracking-wide text-zinc-400 flex items-center gap-1.5">
               <AlertTriangle className="w-3 h-3" /> At risk
               <span className="ml-auto font-semibold text-zinc-700">{atRisk.length}</span>
