@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { supabase } from '@/lib/supabase';
 import { SUBJECTS, SUBJECT_MAP, EX_BREAKDOWN, NUM_TERMS, type Assessment, type SubjectKey, type ComponentType, type ExType } from '@/lib/types';
@@ -7,7 +7,6 @@ import {
   computeFinalGrade,
   gradeDescriptor,
   componentPercentage,
-  exComponentPercentage,
   neededOnRemaining,
   termSeries,
   PASSING,
@@ -69,11 +68,12 @@ function TermSpark({ values, className = '' }: { values: (number | null)[]; clas
 }
 
 function AddForm({
-  name, score, max, onName, onScore, onMax, onAdd, onCancel, namePlaceholder,
+  name, score, max, onName, onScore, onMax, onAdd, onCancel, namePlaceholder, extra,
 }: {
   name: string; score: string; max: string;
   onName: (v: string) => void; onScore: (v: string) => void; onMax: (v: string) => void;
   onAdd: () => void; onCancel: () => void; namePlaceholder: string;
+  extra?: ReactNode;
 }) {
   return (
     <motion.div
@@ -83,11 +83,14 @@ function AddForm({
       transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
       className="overflow-hidden"
     >
-      <div className="flex flex-col gap-2 pt-2">
+      <div className="flex flex-col gap-2 pt-1.5 pb-0.5">
+        {extra}
         <Input value={name} onChange={onName} placeholder={namePlaceholder} className="rounded-2xl" />
-        <Input value={score} onChange={onScore} placeholder="Score" type="number" className="rounded-2xl" />
-        <Input value={max} onChange={onMax} placeholder="Max" type="number" className="rounded-2xl" />
-        <div className="flex items-center gap-2 pt-0.5">
+        <div className="grid grid-cols-2 gap-2">
+          <Input value={score} onChange={onScore} placeholder="Score" type="number" className="rounded-2xl" />
+          <Input value={max} onChange={onMax} placeholder="Max" type="number" className="rounded-2xl" />
+        </div>
+        <div className="flex items-center gap-2">
           <Button size="sm" onClick={onAdd}>Add</Button>
           <button type="button" onClick={onCancel} className="px-2 py-1 text-sm text-zinc-500 hover:text-zinc-800">
             Cancel
@@ -122,7 +125,8 @@ export default function GradesPage() {
   const [loading, setLoading] = useState(true);
   const [selectedSubject, setSelectedSubject] = useState<SubjectKey>('math');
   const [selectedTerm, setSelectedTerm] = useState(1);
-  const [adding, setAdding] = useState<{ component: ComponentType; exType?: ExType } | null>(null);
+  const [adding, setAdding] = useState<ComponentType | null>(null);
+  const [addExType, setAddExType] = useState<ExType>('te');
   const [newName, setNewName] = useState('');
   const [newScore, setNewScore] = useState('');
   const [newMax, setNewMax] = useState('');
@@ -159,12 +163,16 @@ export default function GradesPage() {
   const lowest = ranked.length ? ranked.reduce((a, b) => (a.term <= b.term ? a : b)) : null;
   const atRisk = termGrades.filter((s) => s.term != null && s.term < PASSING);
 
-  const openAdd = (component: ComponentType, exType?: ExType) => {
-    if (adding?.component === component && adding.exType === exType) {
+  const openAdd = (component: ComponentType) => {
+    if (adding === component) {
       setAdding(null);
       return;
     }
-    setAdding({ component, exType });
+    const firstEmptyEx = EX_ORDER.find(
+      (exType) => !subjectAssessments.some((a) => a.component === 'ex' && a.ex_type === exType),
+    ) ?? 'te';
+    setAddExType(firstEmptyEx);
+    setAdding(component);
     setNewName('');
     setNewScore('');
     setNewMax('');
@@ -199,10 +207,17 @@ export default function GradesPage() {
     setAssessments(assessments.filter((a) => a.id !== id));
   };
 
-  const renderItems = (items: Assessment[]) =>
+  const renderItems = (items: Assessment[], showExType = false) =>
     items.map((a) => (
-      <div key={a.id} className="flex items-center gap-2 py-0.5 text-sm group">
-        <span className="flex-1 min-w-0 truncate text-zinc-600">{a.name}</span>
+      <div key={a.id} className="flex items-center gap-2 py-px text-sm group">
+        <span className="flex-1 min-w-0 truncate text-zinc-600">
+          {showExType && a.ex_type && (
+            <span className="mr-1.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+              {a.ex_type}
+            </span>
+          )}
+          {a.name}
+        </span>
         <span className="text-zinc-500 tabular-nums shrink-0 text-[13px]">{a.score}/{a.max_score}</span>
         <span className="text-zinc-400 w-9 text-right tabular-nums shrink-0 text-[12px]">{((a.score / a.max_score) * 100).toFixed(0)}%</span>
         <button
@@ -259,7 +274,7 @@ export default function GradesPage() {
       </div>
 
       <div className="grid lg:grid-cols-12 gap-3 items-start">
-        <div className="lg:col-span-3 space-y-3">
+        <div className="lg:col-span-3">
           <Card className="px-3 py-2">
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
@@ -279,17 +294,14 @@ export default function GradesPage() {
                 <span className="text-zinc-300"> · {descriptor.label}</span>
               </p>
             )}
-          </Card>
-
-          <Card className="px-3 py-2">
-            <p className="text-[10px] uppercase tracking-wide text-zinc-400 mb-1">All subjects</p>
-            <div className="grid grid-cols-2 gap-x-2 gap-y-0">
+            <p className="text-[10px] uppercase tracking-wide text-zinc-400 mt-2 mb-0.5">All subjects</p>
+            <div className="grid grid-cols-2 gap-x-2">
               {termGrades.map((s) => (
                 <button
                   key={s.key}
                   type="button"
                   onClick={() => setSelectedSubject(s.key)}
-                  className={`flex items-center justify-between gap-1 text-left rounded-md px-1 py-px hover:bg-zinc-100/70 ${
+                  className={`flex items-center justify-between gap-1 text-left rounded-md px-1 leading-5 hover:bg-zinc-100/70 ${
                     s.key === selectedSubject ? 'bg-zinc-100/80' : ''
                   }`}
                 >
@@ -303,12 +315,12 @@ export default function GradesPage() {
           </Card>
         </div>
 
-        <Card className="lg:col-span-5 overflow-hidden">
+        <Card className="lg:col-span-4 overflow-hidden self-start">
           {(['ww', 'pt', 'ex'] as ComponentType[]).map((component, idx) => {
             const items = subjectAssessments.filter((a) => a.component === component);
             const pct = componentPercentage(subjectAssessments, component);
             const weight = subject.weights[component];
-            const isAddingHere = adding?.component === component && adding.exType == null;
+            const isOpen = adding === component;
             return (
               <div key={component} className={idx > 0 ? 'border-t border-zinc-200/50' : ''}>
                 <div className="flex items-center gap-2 px-3 py-1.5">
@@ -322,57 +334,16 @@ export default function GradesPage() {
                       {pct.toFixed(0)}%
                     </span>
                   )}
-                  {component !== 'ex' && (
-                    <span className={items.length > 0 ? '' : 'ml-auto'}>
-                      <AddTrigger open={isAddingHere} onClick={() => openAdd(component)} />
-                    </span>
-                  )}
+                  <span className={items.length > 0 ? '' : 'ml-auto'}>
+                    <AddTrigger open={isOpen} onClick={() => openAdd(component)} />
+                  </span>
                 </div>
 
-                {component === 'ex' ? (
-                  <div className="px-3 pb-2 space-y-1.5">
-                    {EX_ORDER.map((exType) => {
-                      const exItems = items.filter((a) => a.ex_type === exType);
-                      const exPct = exComponentPercentage(subjectAssessments, exType);
-                      const isAddingEx = adding?.component === 'ex' && adding.exType === exType;
-                      return (
-                        <div key={exType} className="rounded-xl bg-zinc-50/80 px-2.5 py-1.5">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[12px] font-medium text-zinc-600 min-w-0 truncate">
-                              {EX_LABELS[exType]}
-                              <span className="ml-1 font-normal text-zinc-400">{EX_BREAKDOWN[exType]}%</span>
-                            </span>
-                            <span className="ml-auto text-[12px] font-semibold text-zinc-400 tabular-nums shrink-0">
-                              {exItems.length > 0 ? `${exPct.toFixed(0)}%` : '—'}
-                            </span>
-                            <AddTrigger open={isAddingEx} onClick={() => openAdd('ex', exType)} />
-                          </div>
-                          {exItems.length > 0 && <div className="mt-0.5">{renderItems(exItems)}</div>}
-                          <AnimatePresence initial={false}>
-                            {isAddingEx && (
-                              <AddForm
-                                key="form"
-                                name={newName}
-                                score={newScore}
-                                max={newMax}
-                                onName={setNewName}
-                                onScore={setNewScore}
-                                onMax={setNewMax}
-                                onAdd={() => addAssessment('ex', exType)}
-                                onCancel={() => setAdding(null)}
-                                namePlaceholder="Name"
-                              />
-                            )}
-                          </AnimatePresence>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="px-3 pb-2">
-                    {items.length > 0 && <div>{renderItems(items)}</div>}
+                {(items.length > 0 || isOpen) && (
+                  <div className="px-3 pb-1.5">
+                    {items.length > 0 && <div>{renderItems(items, component === 'ex')}</div>}
                     <AnimatePresence initial={false}>
-                      {isAddingHere && (
+                      {isOpen && (
                         <AddForm
                           key="form"
                           name={newName}
@@ -381,9 +352,26 @@ export default function GradesPage() {
                           onName={setNewName}
                           onScore={setNewScore}
                           onMax={setNewMax}
-                          onAdd={() => addAssessment(component)}
+                          onAdd={() => addAssessment(component, component === 'ex' ? addExType : undefined)}
                           onCancel={() => setAdding(null)}
                           namePlaceholder="Name"
+                          extra={
+                            component === 'ex' ? (
+                              <div className="flex flex-wrap gap-1.5">
+                                {EX_ORDER.map((exType) => (
+                                  <button
+                                    key={exType}
+                                    type="button"
+                                    onClick={() => setAddExType(exType)}
+                                    className={`${PILL} !py-1 !text-[11px] ${addExType === exType ? PILL_ON : PILL_OFF}`}
+                                  >
+                                    {EX_LABELS[exType].replace('Summative Test ', 'ST').replace('Term Examination', 'TE')}
+                                    <span className="ml-1 opacity-60">{EX_BREAKDOWN[exType]}%</span>
+                                  </button>
+                                ))}
+                              </div>
+                            ) : null
+                          }
                         />
                       )}
                     </AnimatePresence>
@@ -394,7 +382,7 @@ export default function GradesPage() {
           })}
         </Card>
 
-        <div className="lg:col-span-4 grid gap-3">
+        <div className="lg:col-span-5 grid gap-3">
           <Card className="px-3.5 py-3">
             <p className="text-[11px] uppercase tracking-wide text-zinc-400">To hit {DEFAULT_TARGET}</p>
             <p className="mt-1 text-sm font-medium text-zinc-800 leading-snug">{need.message}</p>
